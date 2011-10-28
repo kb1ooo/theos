@@ -83,4 +83,6 @@ ifneq ($$(_THEOS_CODESIGN_COMMANDLINE),)
 endif
 endef
 
+-include $(OBJ_FILES_TO_LINK:.o=.o.d)
+
 $(eval $(call __mod,instance/rules.mk))
