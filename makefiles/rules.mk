@@ -75,7 +75,7 @@ $(THEOS_OBJ_DIR)/%.x.o: %.x
 	$(ECHO_PREPROCESSING)$(THEOS_BIN_PATH)/logos.pl $< > $(THEOS_OBJ_DIR)/$<.m$(ECHO_END)
 	$(ECHO_COMPILING)$(TARGET_CXX) -x objective-c -c -I"$(shell pwd)" $(ALL_CFLAGS) $(ALL_OBJCFLAGS) $(TARGET_ONLY_OBJCFLAGS) $(THEOS_OBJ_DIR)/$<.m -o $@$(ECHO_END)
 	$(ECHO_COMPILING)$(TARGET_CXX) -x objective-c -MM -I"$(shell pwd)" $(ALL_CFLAGS) $(ALL_OBJCFLAGS) $(TARGET_ONLY_OBJCFLAGS) $(THEOS_OBJ_DIR)/$<.m > $@.d$(ECHO_END)
-	@sed -i '' 's/[^[:space:]]*\.x[mi]\{0,2\}\.m[mi]\{0,2\}//g' $@.d
+	@sed -i '' 's/[^[:space:]]*\.x[mi]\{0,2\}\.m[mi]\{0,2\} //g' $@.d
 	@mv -f $@.d $@.d.tmp
 	@sed -e 's|.*:|$@:|' < $@.d.tmp > $@.d
 	@sed -e 's/.*://' -e 's/\\$$//' < $@.d.tmp | fmt -1 | \
