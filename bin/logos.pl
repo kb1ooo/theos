@@ -1,5 +1,6 @@
 #!/usr/bin/perl
 
+use 5.006;
 use warnings;
 use strict;
 use FindBin;
@@ -7,6 +8,9 @@ use lib "$FindBin::Bin/lib";
 use Digest::MD5 'md5_hex';
 use Module::Load;
 use Module::Load::Conditional 'can_load';
+
+use Logos::Util;
+$Logos::Util::errorhandler = \&utilErrorHandler;
 
 %main::CONFIG = ( generator => "MobileSubstrate"
 		);
@@ -143,7 +147,7 @@ load $GeneratorPackage."::StaticClassGroup";
 
 $lineno = 1;
 
-my $firsthookline = -1;
+my @firstDirectivePosition;
 my $generateAutoConstructor = 1;
 
 my $defaultGroup = Group->new();
@@ -199,7 +203,7 @@ foreach my $line (@lines) {
 
 				nestingMustNotContain($lineno, "%$1", \@nestingstack, "hook", "subclass");
 
-				$firsthookline = $lineno if $firsthookline == -1;
+				@firstDirectivePosition = ($lineno, $-[0]) if !@firstDirectivePosition;
 
 				nestPush($1, $lineno, \@nestingstack);
 
@@ -216,7 +220,7 @@ foreach my $line (@lines) {
 
 				nestingMustNotContain($lineno, "%$1", \@nestingstack, "hook", "subclass");
 
-				$firsthookline = $lineno if $firsthookline == -1;
+				@firstDirectivePosition = ($lineno, $-[0]) if !@firstDirectivePosition;
 
 				nestPush($1, $lineno, \@nestingstack);
 
@@ -270,7 +274,7 @@ foreach my $line (@lines) {
 				# TODO: This will cause a constructor if you use %class but not %hook (blank constructor)
 				# Not a really big deal, but still nice to fix. Maybe with a list of patchups instead of
 				# "put this hre."
-				$firsthookline = $lineno if $firsthookline == -1;
+				@firstDirectivePosition = ($lineno, $-[0]) if !@firstDirectivePosition;
 
 				my $scope = $2;
 				$scope = "-" if !$scope;
@@ -290,7 +294,7 @@ foreach my $line (@lines) {
 				next if fallsBetween($-[0], @quotes);
 
 				# TODO: Same caveats as %class.
-				$firsthookline = $lineno if $firsthookline == -1;
+				@firstDirectivePosition = ($lineno, $-[0]) if !@firstDirectivePosition;
 
 				my $scope = $1;
 				$scope = "-" if !$scope;
@@ -511,36 +515,78 @@ while(scalar(@nestingstack) > 0) {
 	fileWarning($lineno, "missing %end (%".$parts[0]." opened at ".lineDescriptionForPhysicalLine($parts[1])." extends to EOF)");
 }
 
+# Mk. III processing loop - braces 
+my %depthMapping = ("0:0" => 0);
+$lineno = 1;
+{
+my $depth = 0;
+foreach my $line (@lines) {
+	my @quotes = quotes($line);
+
+	while($line =~ /[{}]/g) {
+		next if fallsBetween($-[0], @quotes);
+
+		my $depthtoken = $lineno.":".($-[0]+1);
+
+		$depth += ($& eq "{") ? 1 : -1;
+		$depthMapping{$depthtoken} = $depth;
+	}
+	$lineno++;
+}
+}
+
 # Always insert $staticClassGroup after _ungrouped.
 splice(@groups, 1, 0, $staticClassGroup);
 
 $hassubstrateh = 1 if($preprocessed);
 
-if($firsthookline != -1) {
-	my $offset = 0;
-	if(!$hassubstrateh) {
-		splice(@lines, $firsthookline - 1, 0, "#include <substrate.h>");
-		$offset++;
-	}
-	splice(@lines, $firsthookline - 1 + $offset, 0, Generator->generateClassList(keys %classes));
-	$offset++;
-	splice(@lines, $firsthookline - 1 + $offset, 0, $staticClassGroup->declarations);
-	$offset++;
+if(@firstDirectivePosition) {
+	# Loop until we find a blank line at depth 0 to splice our preamble in.
+	# The top of the file (or, alternatively, the first line of our file post-
+	# preprocessing) will be considered to be a blank line.
+	#
+	# This breaks if one includes a blank line between "int blah()" and its
+	# corresponding "{", however. Nobody codes like that anyway.
+	# This will probably also break if you keep your "{" and "}" inside header files
+	# that you #include into your code. Nobody codes like that, either.
+	my $line = $firstDirectivePosition[0];
+	my $pos = $firstDirectivePosition[1];
+	while(1) {
+		my $depth = lookupDepthMapping($line, $pos);
+		my $above;
+		$above = "" if $line eq 1;
+		if($preprocessed) {
+			my @lm = lookupLineMapping($line);
+			$above = "" if($lm[0] eq $filename && $lm[1] == 1);
+		}
+		$above = $lines[$line-2] if !defined $above;
 
-	splice(@lines, $firsthookline - 1 + $offset, 0, generateLineDirectiveForPhysicalLine($firsthookline));
-	$offset++;
+		last if $depth == 0 && $above =~ /^\s*$/;
+
+		$line-- if($pos == 0);
+		$pos = 0;
+	}
+	my @preambleLines = ();
+	my @postInitLines = ();
+	if(!$hassubstrateh) {
+		push(@preambleLines, "#include <substrate.h>");
+	}
+	push(@preambleLines, Generator->generateClassList(keys %classes));
+	push(@preambleLines, $staticClassGroup->declarations);
+	push(@preambleLines, generateLineDirectiveForPhysicalLine($line));
 
 	if(!$generateAutoConstructor) {
 		# If the static class list hasn't been initialized, glue it under the last %init line.
 		if(!$staticClassGroup->initialized) {
-			splice(@lines, $lastInitLine + $offset, 0, $staticClassGroup->initializers);
-			$offset++;
-			splice(@lines, $lastInitLine + $offset, 0, generateLineDirectiveForPhysicalLine($lastInitLine));
-			$offset++;
+			push(@postInitLines, $staticClassGroup->initializers);
+			push(@postInitLines, generateLineDirectiveForPhysicalLine($lastInitLine));
 		}
+		splice(@lines, $lastInitLine, 0, @postInitLines);
 	} else {
 		push(@lines, generateConstructor());
 	}
+
+	splice(@lines, $line - 1, 0, @preambleLines);
 
 }
 
@@ -586,25 +632,6 @@ sub generateInitLines {
 	my $return = $group->initializers;
 	$group->initLine($lineno);
 	return $return;
-}
-
-sub quotes {
-	my ($line) = @_;
-	my @quotes = ();
-	while($line =~ /(?<!\\)\"/g) {
-		push(@quotes, $-[0]);
-	}
-	return @quotes;
-}
-
-sub fallsBetween {
-	my $idx = shift;
-	while(@_ > 0) {
-		my $start = shift;
-		my $end = shift;
-		return 1 if ($start < $idx && (!defined($end) || $end > $idx))
-	}
-	return 0;
 }
 
 sub fileWarning {
@@ -679,87 +706,12 @@ sub nestPop {
 	return $parts[0];
 }
 
-sub sanitize {
-	my $input = shift;
-	my $output = $input;
-	$output =~ s/[^\w]//g;
-	return $output;
-}
-
 sub getGroup {
 	my $name = shift;
 	foreach(@groups) {
 		return $_ if $_->name eq $name;
 	}
 	return undef;
-}
-
-sub matchedParenthesisSet {
-	my $in = shift;
-	my $atstart = shift // 1;
-	my $opening = -1;
-	my $closing = -1;
-	if(!$atstart || $in =~ /^\s*\(/) {
-		# If we encounter a ) that puts us back at zero, we found a (
-		# and have reached its closing ).
-		my $parenmatch = $in;
-		my $pdepth = 0;
-		my @pquotes = quotes($parenmatch);
-		while($parenmatch =~ /[;()]/g) {
-			next if fallsBetween($-[0], @pquotes);
-
-			if($& eq "(") {
-				if($pdepth == 0) { $opening = $+[0]; }
-				$pdepth++;
-			} elsif($& eq ")") {
-				$pdepth--;
-				if($pdepth == 0) { $closing = $+[0]; last; }
-			}
-		}
-	}
-
-	return undef if $opening == -1;
-	fileError($lineno, "missing closing parenthesis") if $closing == -1;
-	return ($opening, $closing);
-}
-
-sub nestedParenString {
-	my $in = shift;
-	my ($opening, $closing) = matchedParenthesisSet($in);
-
-	my @ret;
-	if(defined $opening) {
-		$ret[0] = substr($in, $opening, $closing - $opening - 1);
-		$in = substr($in, $closing);
-	}
-	$ret[1] = $in;
-	return @ret;
-}
-
-sub smartSplit {
-	my $re = shift;
-	my $in = shift;
-	return () if $in eq "";
-
-	my $limit = shift // 0;
-
-	my @quotes = quotes($in);
-	my @parens = matchedParenthesisSet($in, 0);
-
-	my $lstart = 0;
-	my @pieces = ();
-	my $piece = "";
-	while($in =~ /$re/g) {
-		next if (defined $parens[0] && fallsBetween($-[0], @parens)) || fallsBetween($-[0], @quotes);
-		$piece = substr($in, $lstart, $-[0]-$lstart);
-		push(@pieces, $piece);
-		$lstart = $+[0];
-		$limit--;
-		last if($limit == 1); # One item left? Bail out and throw the rest of the string into it!
-	}
-	$piece = substr($in, $lstart);
-	push(@pieces, $piece);
-	return @pieces;
 }
 
 sub lookupLineMapping {
@@ -788,4 +740,27 @@ sub lineDescriptionForPhysicalLine {
 	my $filename = $lineMap[0];
 	my $lineno = $lineMap[1];
 	return "$filename:$lineno";
+}
+
+sub lookupDepthMapping {
+	my $fileline = shift;
+	my $pos = shift;
+	my @keys = sort {
+		my @ba=split(/:/,$b);
+		my @aa=split(/:/,$a);
+		($ba[0] == $aa[0]
+			? $ba[1] <=> $aa[1]
+			: $ba[0] <=> $aa[0])
+	} keys %depthMapping;
+	for (@keys) {
+		my @depthTokens = split(/:/, $_);
+		if($fileline > $depthTokens[0] || ($fileline == $depthTokens[0] && $pos >= $depthTokens[1])) {
+			return $depthMapping{$_};
+		}
+	}
+	return 0;
+}
+
+sub utilErrorHandler {
+	fileError($lineno, shift);
 }
