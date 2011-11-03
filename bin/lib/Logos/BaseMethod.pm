@@ -91,13 +91,18 @@ sub selector {
 	}
 }
 
-sub methodSignature {
-	::fileError(-1, "Generator hasn't implemented Method::buildMethodSignature :(");
+sub definition {
+	::fileError(-1, "Generator hasn't implemented Method::definition :(");
 	return "";
 }
 
 sub originalCall {
 	::fileError(-1, "Generator hasn't implemented Method::originalCall :(");
+	return "";
+}
+
+sub declarations {
+	::fileError(-1, "Generator hasn't implemented Method::declarations :(");
 	return "";
 }
 
