@@ -1,5 +1,6 @@
-package BaseMethod;
+package Logos::Method;
 use strict;
+use Logos::Util qw(matchedParenthesisSet);
 
 sub new {
 	my $proto = shift;
@@ -89,6 +90,25 @@ sub selector {
 	} else {
 		return join(":", @{$self->{SELECTOR_PARTS}}).":";
 	}
+}
+
+sub _new_selector {
+	my $self = shift;
+	if($self->numArgs == 0) {
+		return $self->{SELECTOR_PARTS}[0];
+	} else {
+		return join("\$", @{$self->{SELECTOR_PARTS}})."\$";
+	}
+}
+
+sub originalFunctionName {
+	my $self = shift;
+	return Logos::sigil(($self->{SCOPE} eq "+" ? "meta_" : "")."orig").$self->groupIdentifier."\$".$self->class->name."\$".$self->_new_selector;
+}
+
+sub newFunctionName {
+	my $self = shift;
+	return Logos::sigil(($self->{SCOPE} eq "+" ? "meta_" : "")."method").$self->groupIdentifier."\$".$self->class->name."\$".$self->_new_selector;
 }
 
 sub definition {
@@ -241,6 +261,30 @@ sub typeEncodingForArgType {
 	}
 
 	return undef;
+}
+
+sub declarationForTypeWithName {
+	my $self = shift;
+	my $argtype = shift;
+	my $argname = shift;
+	if($argtype !~ /\(\s*[*^]/) {
+		return $argtype." ".$argname;
+	}
+	my $substring = $argtype;
+	my ($opening, $closing) = matchedParenthesisSet($substring, 0);
+	my $offset = 0;
+	while(1) {
+		# We want to put the parameter name right before the closing ) in the deepest nested set if we found a (^ or (*.
+		$substring = substr($substring, $opening, $closing - $opening - 1);
+		$offset += $opening;
+		my ($newopening, $newclosing) = matchedParenthesisSet($substring, 0);
+		last if !defined $newopening;
+		$opening = $newopening;
+		$closing = $newclosing;
+	}
+	my $out = $argtype;
+	substr($out, $offset-$opening+$closing-1, 0, $argname);
+	return $out;
 }
 
 1;

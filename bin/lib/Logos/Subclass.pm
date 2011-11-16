@@ -1,6 +1,6 @@
-package BaseSubclass;
-use Logos::BaseClass;
-@ISA = "BaseClass";
+package Logos::Subclass;
+use Logos::Class;
+our @ISA = ('Logos::Class');
 
 sub new {
 	my $proto = shift;
@@ -9,6 +9,7 @@ sub new {
 	$self->{SUPERCLASS} = undef;
 	$self->{PROTOCOLS} = {};
 	$self->{IVARS} = [];
+	$self->{OVERRIDDEN} = 1;
 	bless($self, $class);
 	return $self;
 }
@@ -16,16 +17,6 @@ sub new {
 ##################### #
 # Setters and Getters #
 # #####################
-sub name {
-	my $self = shift;
-	if(@_) {
-		$self->{NAME} = shift;
-		$self->expression("\$".$self->{NAME});
-		$self->metaexpression("object_getClass(\$".$self->{NAME}.")");
-	}
-	return $self->{NAME};
-}
-
 sub superclass {
 	my $self = shift;
 	if(@_) { $self->{SUPERCLASS} = shift; }
@@ -34,6 +25,21 @@ sub superclass {
 ##### #
 # END #
 # #####
+
+sub initExpr {
+	::fileError(-1, "Generator hasn't implemented Subclass::initExpr :(");
+	return "";
+}
+
+sub _initExpr {
+	my $self = shift;
+	return $self->initExpr;
+}
+
+sub _metaInitExpr {
+	my $self = shift;
+	return "object_getClass(".$self->variable.")";
+}
 
 sub addProtocol {
 	my $self = shift;
@@ -55,6 +61,11 @@ sub getIvarNamed {
 		return $_ if $_->name eq $name;
 	}
 	return undef;
+}
+
+sub declarations {
+	::fileError(-1, "Generator hasn't implemented Subclass::declarations :(");
+	return "";
 }
 
 sub initializers {

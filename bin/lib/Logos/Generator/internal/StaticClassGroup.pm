@@ -1,4 +1,4 @@
-package Logos::Generator::MobileSubstrate::StaticClassGroup;
+package Logos::Generator::internal::StaticClassGroup;
 use strict;
 use Logos::StaticClassGroup;
 our @ISA = ('Logos::StaticClassGroup');

@@ -1,8 +1,8 @@
-package Logos::Generator::MobileSubstrate::Subclass;
+package Logos::Generator::internal::Subclass;
 use strict;
-use Logos::Generator::MobileSubstrate::Class;
+use Logos::Generator::internal::Class;
 use Logos::Subclass;
-our @ISA = ('Logos::Subclass', 'Logos::Generator::MobileSubstrate::Class');
+our @ISA = ('Logos::Subclass', 'Logos::Generator::internal::Class');
 
 # declarations is inherited from Class.
 
@@ -13,14 +13,14 @@ sub initExpr {
 
 sub declarations {
 	my $self = shift;
-	return $self->Logos::Generator::MobileSubstrate::Class::declarations;
+	return $self->Logos::Generator::internal::Class::declarations;
 }
 
 sub initializers {
 	my $self = shift;
 	my $return = "";
 	$return .= "{ ";
-	$return .= $self->Logos::Generator::MobileSubstrate::Class::initializers." ";
+	$return .= $self->Logos::Generator::internal::Class::initializers." ";
 	# <ivars>
 	foreach(@{$self->{IVARS}}) {
 		$return .= $_->initializers;
